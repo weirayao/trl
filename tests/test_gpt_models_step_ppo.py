@@ -8,12 +8,14 @@ from trl.gpt2 import respond_to_batch
 
 from trl.ppo import PPOTrainer
 
-
-def test_gpt2_model():
+@pytest.mark.parametrize(
+    "model_name", ["gpt2", "gpt2-medium", "gpt2-large"]
+)
+def test_gpts_models_step_ppo(model_name):
     # get models
-    gpt2_model = AutoModelForCausalLMWithValueHead.from_pretrained("gpt2")
-    gpt2_model_ref = AutoModelForCausalLMWithValueHead.from_pretrained("gpt2")
-    gpt2_tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+    gpt2_model = AutoModelForCausalLMWithValueHead.from_pretrained(model_name)
+    gpt2_model_ref = AutoModelForCausalLMWithValueHead.from_pretrained(model_name)
+    gpt2_tokenizer = GPT2Tokenizer.from_pretrained(model_name)
 
     # initialize trainer
     ppo_config = {"batch_size": 1, "forward_batch_size": 1}
