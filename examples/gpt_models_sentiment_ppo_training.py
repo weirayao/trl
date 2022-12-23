@@ -10,12 +10,10 @@ import pandas as pd
 tqdm.pandas()
 
 from datasets import load_dataset
-
-from transformers import AutoTokenizer, pipeline
-
-from trl.gpt2 import GPT2HeadWithValueModel, respond_to_batch
+from transformers import AutoTokenizer, AutoModelForCausalLM,  pipeline
+from trl import AutoModelForCausalLMWithValueHead
 from trl.ppo import PPOTrainer
-from trl.core import build_bert_batch_from_txt, listify_batch
+
 
 parser = argparse.ArgumentParser(allow_abbrev=False)
 parser.add_argument(
@@ -68,15 +66,14 @@ sent_kwargs = {
 
 sentiment_pipe = pipeline("sentiment-analysis","lvwerra/distilbert-imdb", device=pipe_device)
 
-gpt2_model = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
-gpt2_model_ref = GPT2HeadWithValueModel.from_pretrained(config['model_name'])
+model = AutoModelForCausalLMWithValueHead.from_pretrained(config['model_name'])
+model_ref = AutoModelForCausalLM.from_pretrained(config['model_name'])
 
-gpt2_tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
-gpt2_tokenizer.pad_token = gpt2_tokenizer.eos_token
+tokenizer = AutoTokenizer.from_pretrained(config['model_name'])
+tokenizer.pad_token = tokenizer.eos_token
 
-
-gpt2_model.to(device);
-gpt2_model_ref.to(device);
+model.to(device)
+model_ref.to(device)
 
 class LengthSampler:
     def __init__(self, min_value, max_value):
@@ -89,8 +86,8 @@ output_size = LengthSampler(config["txt_out_min_len"], config["txt_out_max_len"]
 
 
 def tokenize(sample):
-    sample["tokens"] = gpt2_tokenizer.encode(sample["review"])[:input_size()]
-    sample["query"] = gpt2_tokenizer.decode(sample["tokens"])
+    sample["tokens"] = tokenizer.encode(sample["review"])[:input_size()]
+    sample["query"] = tokenizer.decode(sample["tokens"])
     return sample
 
 ds = ds.map(tokenize, batched=False)
@@ -101,7 +98,7 @@ gen_kwargs = {
     "top_k": 0.0,
     "top_p": 1.0,
     "do_sample": True,
-    "pad_token_id": gpt2_tokenizer.eos_token_id
+    "pad_token_id": tokenizer.eos_token_id
 }
 
 def collater(data):
@@ -109,7 +106,7 @@ def collater(data):
 
 dataloader = torch.utils.data.DataLoader(ds, batch_size=config['batch_size'], collate_fn=collater)
 
-ppo_trainer = PPOTrainer(gpt2_model, gpt2_model_ref, gpt2_tokenizer, **config)
+ppo_trainer = PPOTrainer(model, model_ref, tokenizer, **config)
 
 total_ppo_epochs = int(np.ceil(config["steps"]/config['batch_size']))
 
@@ -123,10 +120,10 @@ for epoch, batch in tqdm(zip(range(total_ppo_epochs), iter(dataloader))):
     response_tensors = []
     for i in range(config['batch_size']):
         gen_len = output_size()
-        response = gpt2_model.generate(query_tensors[i].unsqueeze(dim=0),
+        response = model.generate(query_tensors[i].unsqueeze(dim=0),
                                        max_new_tokens=gen_len, **gen_kwargs)
         response_tensors.append(response.squeeze()[-gen_len:])
-    batch['response'] = [gpt2_tokenizer.decode(r.squeeze()) for r in response_tensors]
+    batch['response'] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
     timing['time/get_response'] = time.time()-t
 
     #### Compute sentiment score
