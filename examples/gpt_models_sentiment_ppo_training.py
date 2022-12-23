@@ -27,7 +27,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 config = {
-    "model_name": "lvwerra/gpt2-imdb",
+    "model_name": args.model_name,
     "cls_model_name": "lvwerra/distilbert-imdb",
     "steps": 20000,
     "batch_size": 256,
@@ -53,7 +53,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 pipe_device = 0 if torch.cuda.is_available() else -1
 
 
-wandb.init(name='run-42', project='gpt2-test', config=config, )
+wandb.init(name=config["model_name"], project='trl_gpt_models_sentiment_ppo_training', config=config, )
 
 # load imdb with datasets
 ds = load_dataset('imdb', split='train')
