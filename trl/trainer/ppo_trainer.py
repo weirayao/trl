@@ -14,6 +14,8 @@
 import inspect
 import logging
 import os
+import gc
+import torch
 import random
 import time
 import warnings
@@ -439,6 +441,9 @@ class PPOTrainer(BaseTrainer):
 
         self.model.train()
         self.model.gradient_checkpointing_enable()
+
+        gc.collect()
+        torch.cuda.empty_cache()
         t = time.time()
         all_stats = []
         idxs = list(range(bs))
@@ -575,7 +580,11 @@ class PPOTrainer(BaseTrainer):
 
             with torch.no_grad():
                 logits, _, v = self.model(**input_kwargs)
-                ref_logits, _, _ = self.ref_model(**input_kwargs)
+                if self.ref_model is None and hasattr(self.model.pretrained_model, "disable_adapter"):
+                    with self.model.pretrained_model.disable_adapter():
+                        ref_logits, _, _ = self.model(**input_kwargs)
+                else:
+                    ref_logits, _, _ = self.ref_model(**input_kwargs)
 
             if self.is_encoder_decoder:
                 input_ids = input_kwargs["decoder_input_ids"]
@@ -643,6 +652,10 @@ class PPOTrainer(BaseTrainer):
         loss = loss_p + loss_v
         self.optimizer.zero_grad()
         self.accelerator.backward(loss)
+        # gc.collect()
+        # torch.cuda.empty_cache()
+
+        # print("torch.cuda.memory_allocated in ppo step: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
         t = time.time()
         self.optimizer.step()
         train_stats["time/ppo/optimizer_step"] = torch.Tensor([time.time() - t]).to(self.accelerator.device)
