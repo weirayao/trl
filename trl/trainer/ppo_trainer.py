@@ -442,8 +442,8 @@ class PPOTrainer(BaseTrainer):
         self.model.train()
         self.model.gradient_checkpointing_enable()
 
-        gc.collect()
-        torch.cuda.empty_cache()
+        # gc.collect()
+        # torch.cuda.empty_cache()
         t = time.time()
         all_stats = []
         idxs = list(range(bs))
