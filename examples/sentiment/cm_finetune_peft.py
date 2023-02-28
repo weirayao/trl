@@ -21,6 +21,7 @@ https://huggingface.co/models?filter=text-generation
 """
 # You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
 
+from pathlib import Path
 import logging
 import math
 import os
@@ -638,6 +639,8 @@ def main():
             kwargs["dataset"] = data_args.dataset_name
 
     if training_args.push_to_hub:
+        model.push_to_hub(f"{Path(training_args.output_dir).absolute().name}-imdb-peft")
+
         trainer.push_to_hub(**kwargs)
     else:
         trainer.create_model_card(**kwargs)
