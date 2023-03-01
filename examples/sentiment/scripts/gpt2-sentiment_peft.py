@@ -163,7 +163,7 @@ def print_trainable_parameters(model):
     )
 
 target_modules = None
-if script_args.model_name == "EleutherAI/gpt-neox-20b":
+if script_args.model_name in ["EleutherAI/gpt-neox-20b","edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
     target_modules = ["query_key_value", "xxx"] # workaround to use 8bit training on this model
 
 lora_config = LoraConfig(
@@ -178,7 +178,7 @@ lora_config = LoraConfig(
 pretrained_model = prepare_model_for_int8_training(pretrained_model, output_embedding_layer_name="embed_out")
 
 # hacky workaround due to issues with "EleutherAI/gpt-neox-20b"
-if script_args.model_name == "EleutherAI/gpt-neox-20b":
+if script_args.model_name in ["EleutherAI/gpt-neox-20b","edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
     for name, param in pretrained_model.named_parameters():
         # freeze base model's layers
         param.requires_grad = False
