@@ -156,66 +156,77 @@ def disable_peft_merge(peft_model):
 
 
 # converting the model
-merge_adapter = False
-if merge_adapter:
-    model_name = "edbeeching/gpt-neo-125M-imdb_adapter-imdb-peft"
+# merge_adapter = False
+# if merge_adapter:
+#     model_name = "edbeeching/gpt-neo-125M-imdb_adapter-imdb-peft"
 
-    peft_config = PeftConfig.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path, load_in_8bit=True, device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+#     peft_config = PeftConfig.from_pretrained(model_name)
+#     model = AutoModelForCausalLM.from_pretrained(
+#         peft_config.base_model_name_or_path, load_in_8bit=True, device_map="auto"
+#     )
+#     tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
 
-    from_pretrained = True
-    if from_pretrained:
-        model = PeftModel.from_pretrained(model, model_name)
-    else:
-        lora_config = LoraConfig(
-            r=16,
-            lora_alpha=32,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
-        model = get_peft_model(model, lora_config)
+#     from_pretrained = True
+#     if from_pretrained:
+#         model = PeftModel.from_pretrained(model, model_name)
+#     else:
+#         lora_config = LoraConfig(
+#             r=16,
+#             lora_alpha=32,
+#             lora_dropout=0.05,
+#             bias="none",
+#             task_type="CAUSAL_LM",
+#         )
+#         model = get_peft_model(model, lora_config)
 
-    zero_weights = False
-    if zero_weights:
-        for key, module in model.named_modules():
-            if isinstance(module, peft.tuners.lora.Linear8bitLt):
-                print(key)
-                module.lora_A.weight.data *= 0
-                module.lora_B.weight.data *= 0
-                pass
+#     zero_weights = False
+#     if zero_weights:
+#         for key, module in model.named_modules():
+#             if isinstance(module, peft.tuners.lora.Linear8bitLt):
+#                 print(key)
+#                 module.lora_A.weight.data *= 0
+#                 module.lora_B.weight.data *= 0
+#                 pass
 
-    model.eval()
+#     model.eval()
 
-    # key_list = [key for key, _ in model.base_model.model.named_modules() if "lora" not in key]
-    # for key in key_list:
-    #     parent, target, target_name = model.base_model._get_submodules(key)
-    #     if isinstance(target, peft.tuners.lora.Linear):
-    #         bias = target.bias is not None
-    #         new_module = torch.nn.Linear(target.in_features, target.out_features, bias=bias)
-    #         model.base_model._replace_module(parent, target_name, new_module, target)
+# key_list = [key for key, _ in model.base_model.model.named_modules() if "lora" not in key]
+# for key in key_list:
+#     parent, target, target_name = model.base_model._get_submodules(key)
+#     if isinstance(target, peft.tuners.lora.Linear):
+#         bias = target.bias is not None
+#         new_module = torch.nn.Linear(target.in_features, target.out_features, bias=bias)
+#         model.base_model._replace_module(parent, target_name, new_module, target)
 
 # model.base_model.model.push_to_hub(f"{model_name}-adapter-removed")
 # print(model)
-else:
-    #    model = AutoModelForCausalLM.from_pretrained(config.model_name).to(
-    #        "cuda"
-    #    )  # , load_in_8bit=True, device_map="auto")
-    #    tokenizer = AutoTokenizer.from_pretrained(config.model_name)
+# else:
+#    model = AutoModelForCausalLM.from_pretrained(config.model_name).to(
+#        "cuda"
+#    )  # , load_in_8bit=True, device_map="auto")
+#    tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
-    peft_model_id = "edbeeching/gpt-neo-125M-imdb-lora2"
-    peft_config = PeftConfig.from_pretrained(peft_model_id)
-    model = AutoModelForCausalLM.from_pretrained(
-        peft_config.base_model_name_or_path, return_dict=True, load_in_8bit=True, device_map="auto"
-    )
-    tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
+peft_model_id = "edbeeching/gpt-neo-125M-imdb-lora2"
+peft_config = PeftConfig.from_pretrained(peft_model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    peft_config.base_model_name_or_path, return_dict=True  # , load_in_8bit=True, device_map="auto"
+)
+tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
 
-    # Load the Lora model
-    model = PeftModel.from_pretrained(model, peft_model_id)
+# Load the Lora model
+model = PeftModel.from_pretrained(model, peft_model_id)
+model.to("cuda")
+model.eval()
 
+key_list = [key for key, _ in model.base_model.model.named_modules() if "lora" not in key]
+for key in key_list:
+    parent, target, target_name = model.base_model._get_submodules(key)
+    if isinstance(target, peft.tuners.lora.Linear):
+        bias = target.bias is not None
+        new_module = torch.nn.Linear(target.in_features, target.out_features, bias=bias)
+        model.base_model._replace_module(parent, target_name, new_module, target)
+
+model = model.base_model.model
 
 # PEFT
 # target_modules = None
@@ -260,7 +271,7 @@ else:
 
 # GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
 # only for this model.
-tokenizer.pad_token = tokenizer.eos_token
+# tokenizer.pad_token = tokenizer.eos_token
 
 dataloader = torch.utils.data.DataLoader(
     dataset,

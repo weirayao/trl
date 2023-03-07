@@ -19,7 +19,8 @@ import torch
 from tqdm import tqdm
 import torch.nn as nn
 import bitsandbytes as bnb
-from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training
+from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, PeftConfig, PeftModel
+import peft
 
 tqdm.pandas()
 
@@ -69,9 +70,12 @@ class ScriptArguments:
 
     # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
     # models like gpt-neo* models are more suitable
-    model_name: Optional[str] = field(default="edbeeching/gpt-neo-125M-imdb", metadata={"help": "the model name"})
+    model_name: Optional[str] = field(
+        default="edbeeching/gpt-neo-125M-imdb-lora-adapter-merged", metadata={"help": "the model name"}
+    )
     log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
     learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
+    merge_model_adapter: Optional[bool] = field(default=False, metadata={"help": "the learning rate"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -139,8 +143,8 @@ set_seed(config.seed)
 # Now let's build the model, the reference model, and the tokenizer.
 # ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, load_in_8bit=True, device_map="auto")
 # model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, load_in_8bit=True, device_map="auto")
-pretrained_model = AutoModelForCausalLM.from_pretrained(config.model_name, load_in_8bit=True, device_map="auto")
 
+pretrained_model = AutoModelForCausalLM.from_pretrained(config.model_name, load_in_8bit=True, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
 """### Apply LoRA
@@ -162,14 +166,15 @@ def print_trainable_parameters(model):
         f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}"
     )
 
+
 target_modules = None
-if script_args.model_name in ["EleutherAI/gpt-neox-20b","edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
-    target_modules = ["query_key_value", "xxx"] # workaround to use 8bit training on this model
+if script_args.model_name in ["EleutherAI/gpt-neox-20b", "edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
+    target_modules = ["query_key_value", "xxx"]  # workaround to use 8bit training on this model
 
 lora_config = LoraConfig(
     r=16,
     lora_alpha=32,
-    target_modules=target_modules,  #handled automatically by peft
+    target_modules=target_modules,  # handled automatically by peft
     lora_dropout=0.05,
     bias="none",
     task_type="CAUSAL_LM",
@@ -178,7 +183,7 @@ lora_config = LoraConfig(
 pretrained_model = prepare_model_for_int8_training(pretrained_model, output_embedding_layer_name="embed_out")
 
 # hacky workaround due to issues with "EleutherAI/gpt-neox-20b"
-if script_args.model_name in ["EleutherAI/gpt-neox-20b","edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
+if script_args.model_name in ["EleutherAI/gpt-neox-20b", "edbeeching/gpt-neox-20b-imdb-peft-adapter-removed"]:
     for name, param in pretrained_model.named_parameters():
         # freeze base model's layers
         param.requires_grad = False
@@ -208,7 +213,9 @@ tokenizer.pad_token = tokenizer.eos_token
 optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=config.learning_rate)
 
 # We then build the PPOTrainer, passing the model, the reference model, the tokenizer
-ppo_trainer = PPOTrainer(config, model, ref_model=None,  tokenizer=tokenizer, dataset=dataset, data_collator=collator, optimizer=optimizer)
+ppo_trainer = PPOTrainer(
+    config, model, ref_model=None, tokenizer=tokenizer, dataset=dataset, data_collator=collator, optimizer=optimizer
+)
 
 # We then build the sentiment analysis pipeline, passing the model name and the
 # sentiment analysis pipeline arguments. Let's also make sure to set the device
@@ -227,7 +234,7 @@ generation_kwargs = {
     "top_p": 1.0,
     "do_sample": True,
     "pad_token_id": tokenizer.eos_token_id,
-    "eos_token_id": -1
+    "eos_token_id": -1,
 }
 output_min_length = 4
 output_max_length = 16
@@ -252,11 +259,10 @@ for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
     texts = [q + r for q, r in zip(batch["query"], batch["response"])]
     pipe_outputs = sentiment_pipe(texts, **sent_kwargs)
     rewards = [torch.tensor(output[1]["score"]) for output in pipe_outputs]
-    
 
     #### Run PPO step
     model.gradient_checkpointing_enable()
-    model.pretrained_model.config.use_cache = False 
+    model.pretrained_model.config.use_cache = False
 
     stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
     ppo_trainer.log_stats(stats, batch, rewards)

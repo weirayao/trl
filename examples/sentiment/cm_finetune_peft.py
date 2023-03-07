@@ -55,6 +55,24 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+###
+from typing import Optional
+from dataclasses import dataclass, field
+
+import torch
+from tqdm import tqdm
+import torch.nn as nn
+import bitsandbytes as bnb
+from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, PeftModel
+import peft
+tqdm.pandas()
+
+from transformers import pipeline, AutoTokenizer, HfArgumentParser, AutoModelForCausalLM
+from datasets import load_dataset
+
+from trl import PPOTrainer, PPOConfig, AutoModelForCausalLMWithValueHead, set_seed
+from trl.core import LengthSampler
+###
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 # check_min_version("4.27.0.dev0")
@@ -427,17 +445,17 @@ def main():
         task_type="CAUSAL_LM",
     )
 
-    model = prepare_model_for_int8_training(model, output_embedding_layer_name="embed_out")
+    model = prepare_model_for_int8_training(model)
     # hacky workaround due to issues with "EleutherAI/gpt-neox-20b"
-    if model_args.model_name_or_path == "EleutherAI/gpt-neox-20b":
-        for name, param in model.named_parameters():
-            # freeze base model's layers
-            param.requires_grad = False
+    # if model_args.model_name_or_path == "EleutherAI/gpt-neox-20b":
+    for name, param in model.named_parameters():
+        # freeze base model's layers
+        param.requires_grad = False
 
-            if getattr(model, "is_loaded_in_8bit", False):
-                # cast layer norm in fp32 for stability for 8bit models
-                if param.ndim == 1 and "layer_norm" in name:
-                    param.data = param.data.to(torch.float16)
+        if getattr(model, "is_loaded_in_8bit", False):
+            # cast layer norm in fp32 for stability for 8bit models
+            if param.ndim == 1 and "ln_" in name:
+                param.data = param.data.to(torch.float16)
 
     model = get_peft_model(model, lora_config)
     model.config.use_cache=False
@@ -640,10 +658,178 @@ def main():
 
     if training_args.push_to_hub:
         model.push_to_hub(f"{Path(training_args.output_dir).absolute().name}-imdb-peft")
+        #model.save_pretrained(f"{Path(training_args.output_dir).absolute().name}-imdb-peft")
 
         trainer.push_to_hub(**kwargs)
     else:
         trainer.create_model_card(**kwargs)
+
+
+    #return 
+
+    ###
+
+
+    ########################################################################
+    # This is a fully working simple example to use trl with accelerate.
+    #
+    # This example fine-tunes a GPT2 model on the IMDB dataset using PPO
+    # (proximal policy optimization).
+    # in any of the following settings (with the same script):
+    #   - single CPU or single GPU
+    #   - multi GPUS (using PyTorch distributed mode)
+    #   - multi GPUS (using DeepSpeed ZeRO-Offload stages 1 & 2)
+    #   - fp16 (mixed-precision) or fp32 (normal precision)
+    #
+    # To run it in each of these various modes, first initialize the accelerate
+    # configuration with `accelerate config`
+    #
+    ########################################################################
+
+    ########################################################################
+    # NOTE for to train with a 8-bit model a more recent version of
+    # transformers is required, full dependecies for this example:
+    # pip install  bitsandbytes datasets accelerate loralib
+    # pip install  git+https://github.com/huggingface/transformers.git@main
+    # pip install git+https://github.com/huggingface/peft.git
+    ########################################################################
+
+    # We first define the configuration of the experiment, defining the model, the dataset,
+    # the training parameters, and the PPO parameters.
+    # Check the default arguments in the `PPOConfig` class for more details.
+    # If you want to log with tensorboard, add the kwarg
+    # `accelerator_kwargs={"logging_dir": PATH_TO_LOGS}` to the PPOConfig.
+
+
+    # Define and parse arguments.
+    @dataclass
+    class ScriptArguments:
+        """
+        The name of the Casual LM model we wish to fine with PPO
+        """
+
+        # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
+        # models like gpt-neo* models are more suitable
+        model_name: Optional[str] = field(default="EleutherAI/gpt-neo-125M", metadata={"help": "the model name"})
+        log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
+        learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
+
+
+    script_args = ScriptArguments()
+
+    config = PPOConfig(
+        model_name=script_args.model_name,
+        learning_rate=script_args.learning_rate,
+        log_with=script_args.log_with,
+        forward_batch_size=1,
+        batch_size=32,
+    )
+
+    # Below is an example function to build the dataset. In our case, we use the IMDB dataset
+    # from the `datasets` library. One should customize this function to train the model on
+    # its own dataset.
+    def build_dataset(config, dataset_name="imdb", input_min_text_length=2, input_max_text_length=8):
+        """
+        Build dataset for training. This builds the dataset from `load_dataset`, one should
+        customize this function to train the model on its own dataset.
+
+        Args:
+            dataset_name (`str`):
+                The name of the dataset to be loaded.
+
+        Returns:
+            dataloader (`torch.utils.data.DataLoader`):
+                The dataloader for the dataset.
+        """
+        tokenizer = AutoTokenizer.from_pretrained("gpt-neo-125M-imdb_adapter")
+        #tokenizer.pad_token = tokenizer.eos_token
+        # load imdb with datasets
+        ds = load_dataset(dataset_name, split="train")
+        ds = ds.rename_columns({"text": "review"})
+        ds = ds.filter(lambda x: len(x["review"]) > 200, batched=False)
+
+        input_size = LengthSampler(input_min_text_length, input_max_text_length)
+
+        def tokenize(sample):
+            sample["input_ids"] = tokenizer.encode(sample["review"])[: input_size()]
+            sample["query"] = tokenizer.decode(sample["input_ids"])
+            return sample
+
+        ds = ds.map(tokenize, batched=False)
+        ds.set_format(type="torch")
+        return ds
+
+
+    # We retrieve the dataloader by calling the `build_dataset` function.
+    dataset = build_dataset(config)
+
+    def collator(data):
+        return dict((key, [d[key] for d in data]) for key in data[0])
+
+    # set seed before initializing value head for deterministic eval
+    set_seed(config.seed)
+    tokenizer_kwargs = {
+        "cache_dir": model_args.cache_dir,
+        "use_fast": model_args.use_fast_tokenizer,
+        "revision": model_args.model_revision,
+        "use_auth_token": True if model_args.use_auth_token else None,
+    }
+    # model = AutoModelForCausalLM.from_pretrained(config.model_name).to("cuda")#, load_in_8bit=True, device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained("gpt-neo-125M-imdb_adapter")
+
+    #tokenizer.pad_token = tokenizer.eos_token
+
+    dataloader = torch.utils.data.DataLoader(
+        dataset,
+        batch_size=config.batch_size,
+        collate_fn=collator,
+        shuffle=True,
+        drop_last=True,
+    )
+
+    # We then build the sentiment analysis pipeline, passing the model name and the
+    # sentiment analysis pipeline arguments. Let's also make sure to set the device
+    # to the same device as the PPOTrainer.
+
+    # We then define the arguments to pass to the `generate` function. These arguments
+    # are passed to the `generate` function of the PPOTrainer, which is a wrapper around
+    # the `generate` function of the trained model.
+    generation_kwargs = {
+        "min_length": -1,
+        "top_k": 0.0,
+        "top_p": 1.0,
+        "do_sample": True,
+        #"pad_token_id": tokenizer.eos_token_id,
+        #"eos_token_id": -1
+    }
+    output_min_length = 4
+    output_max_length = 16
+    output_length_sampler = LengthSampler(output_min_length, output_max_length)
+
+    model.eval()
+    for epoch, batch in tqdm(enumerate(dataloader)):
+        query_tensors = batch["input_ids"]
+
+        model.config.use_cache = True
+        #### Get response from Causal LM
+        response_tensors = []
+        for query in query_tensors:
+            gen_len = output_length_sampler()
+            generation_kwargs["max_new_tokens"] = gen_len
+            response = model.generate(input_ids=query.unsqueeze(0).to("cuda"), **generation_kwargs)
+            response_tensors.append(response.squeeze()[-gen_len:])
+        batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
+
+        for r in zip(batch["query"], batch["response"]):
+            print(r)
+
+        
+
+        break
+        
+    print(model)
+####
+
 
 
 def _mp_fn(index):
