@@ -104,7 +104,7 @@ config = LoraConfig(
 model = get_peft_model(model, config)
 print_trainable_parameters(model)
 
-block_size = 2
+block_size = 1024
 
 
 def group_texts(examples):
