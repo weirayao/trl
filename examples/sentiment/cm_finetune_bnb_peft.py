@@ -65,7 +65,12 @@ if tokenizer.pad_token_id is None:
 
 from peft import prepare_model_for_int8_training
 
-model = prepare_model_for_int8_training(model)
+if "gpt-neox" in model_args.model_name_or_path:
+    model = prepare_model_for_int8_training(
+        model, output_embedding_layer_name="embed_out", layer_norm_names=["layer_norm", "layernorm"]
+    )
+else:
+    model = prepare_model_for_int8_training(model)
 
 # ### Apply LoRA
 #
@@ -89,12 +94,17 @@ def print_trainable_parameters(model):
 
 from peft import LoraConfig, get_peft_model
 
-config = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM")
+target_modules = None
+if "gpt-neox" in model_args.model_name_or_path:
+    target_modules = ["query_key_value", "xxx"]  # workaround to use 8bit training on this model
+config = LoraConfig(
+    r=16, lora_alpha=32, target_modules=target_modules, lora_dropout=0.05, bias="none", task_type="CAUSAL_LM"
+)
 
 model = get_peft_model(model, config)
 print_trainable_parameters(model)
 
-block_size = 1024
+block_size = 2
 
 
 def group_texts(examples):
@@ -122,7 +132,7 @@ data = data.map(group_texts, batched=True)
 # train_dataset.select(  # this entry causes a crash for some reason
 #     [i for i in range(len(train_dataset)) if not i in [22551]]
 # )
-
+model.gradient_checkpointing_enable()
 trainer = transformers.Trainer(
     model=model,
     train_dataset=data["train"],
