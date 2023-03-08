@@ -23,7 +23,11 @@ script_args = parser.parse_args_into_dataclasses()[0]
 peft_model_id = script_args.model_name
 peft_config = PeftConfig.from_pretrained(peft_model_id)
 model = AutoModelForCausalLM.from_pretrained(
-    peft_config.base_model_name_or_path, return_dict=True  # , load_in_8bit=True, device_map="auto"
+    peft_config.base_model_name_or_path,
+    return_dict=True,
+    # torch_dtype=torch.float16,
+    # device_map="auto",
+    # , load_in_8bit=True, device_map="auto"
 )
 tokenizer = AutoTokenizer.from_pretrained(peft_config.base_model_name_or_path)
 
