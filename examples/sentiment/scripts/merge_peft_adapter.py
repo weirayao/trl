@@ -46,4 +46,4 @@ for key in key_list:
 
 model = model.base_model.model
 
-model.push_to_hub(f"{script_args.model_name}-adapter-merged")
+model.push_to_hub(f"{script_args.model_name}-adapter-merged", use_temp_dir=False)
