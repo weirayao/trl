@@ -69,6 +69,9 @@ class ScriptArguments:
     log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
     learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
     merge_model_adapter: Optional[bool] = field(default=False, metadata={"help": "the learning rate"})
+    output_max_length: Optional[int] = field(
+        default=16, metadata={"help": "the maximum sequence length that can be output by the model"}
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -224,7 +227,7 @@ generation_kwargs = {
     "eos_token_id": -1,
 }
 output_min_length = 4
-output_max_length = 16
+output_max_length = script_args.output_max_length
 output_length_sampler = LengthSampler(output_min_length, output_max_length)
 
 
