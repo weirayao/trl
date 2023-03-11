@@ -72,6 +72,9 @@ class ScriptArguments:
     output_max_length: Optional[int] = field(
         default=16, metadata={"help": "the maximum sequence length that can be output by the model"}
     )
+    mini_batch_size: Optional[int] = field(
+        default=16, metadata={"help": "the maximum sequence length that can be output by the model"}
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -81,7 +84,7 @@ config = PPOConfig(
     model_name=script_args.model_name,
     learning_rate=script_args.learning_rate,
     log_with=script_args.log_with,
-    mini_batch_size=16,
+    mini_batch_size=script_args.mini_batch_size,
     batch_size=256,
 )
 
