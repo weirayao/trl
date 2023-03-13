@@ -811,7 +811,7 @@ class PPOTrainer(BaseTrainer):
                 approxkl=approxkl.item(),
                 policykl=policykl.item(),
                 clipfrac=pg_clipfrac.item(),
-                advantages=advantages.item(),
+                advantages=advantages.detach(),
                 advantages_mean=masked_mean(advantages, mask).item(),
                 ratio=ratio.item(),
             ),
