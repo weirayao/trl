@@ -40,9 +40,7 @@ class ScriptArguments:
     weight_decay: Optional[int] = field(default=0.001)
     model_name: Optional[str] = field(
         default="gpt2",
-        metadata={
-            "help": "The model that you want to train from the Hugging Face hub. E.g. gpt2, gpt2-xl, bert, etc."
-        },
+        metadata={"help": "The model that you want to train from the Hugging Face hub. E.g. gpt2, gpt2-xl, bert, etc."},
     )
     bf16: Optional[bool] = field(
         default=False,
@@ -69,6 +67,7 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=script_args.per_device_eval_batch_size,
     num_train_epochs=script_args.num_train_epochs,
     weight_decay=script_args.weight_decay,
+    logging_steps=10,
     evaluation_strategy="epoch",
     save_strategy="epoch",
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
