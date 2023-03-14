@@ -52,9 +52,11 @@ class ScriptArguments:
         default=1, metadata={"help": "The number of training epochs for the reward model."}
     )
     train_subset: Optional[int] = field(
-        default=1000, metadata={"help": "The size of the subset of the training data to use"}
+        default=100000, metadata={"help": "The size of the subset of the training data to use"}
     )
-    eval_subset: Optional[int] = field(default=500, metadata={"help": "The size of the subset of the eval data to use"})
+    eval_subset: Optional[int] = field(
+        default=50000, metadata={"help": "The size of the subset of the eval data to use"}
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
