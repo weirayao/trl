@@ -71,8 +71,11 @@ eval_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/eval
 if script_args.eval_subset > 0:
     eval_dataset = eval_dataset.select(range(script_args.eval_subset))
 # Define the training args. Needs to be done before the model is loaded if you are using deepspeed.
+
+output_name = f"{script_args.model_name}_stack-exchange-paired_reward_model_train_subset_{script_args.train_subset}"
+
 training_args = TrainingArguments(
-    output_dir=f"{script_args.model_name}_stack-exchange-paired_reward_model",
+    output_dir=output_name,
     learning_rate=script_args.learning_rate,
     per_device_train_batch_size=script_args.per_device_train_batch_size,
     per_device_eval_batch_size=script_args.per_device_eval_batch_size,
@@ -215,5 +218,5 @@ trainer = RewardTrainer(
 trainer.train(script_args.resume_from_checkpoint)
 
 # Push to the hub so you can share it with people :D
-model.push_to_hub(script_args.model_name + "_stack-exchange-paired_reward_model")
-tokenizer.push_to_hub(script_args.model_name + "_stack-exchange-paired_reward_model")
+model.push_to_hub(output_name)
+tokenizer.push_to_hub(output_name)
