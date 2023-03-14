@@ -85,6 +85,7 @@ training_args = TrainingArguments(
     local_rank=script_args.local_rank,
     remove_unused_columns=False,
     label_names=[],
+    bf16=script_args.bf16,
 )
 
 # Load the value-head model and tokenizer.
@@ -210,5 +211,5 @@ trainer = RewardTrainer(
 trainer.train(script_args.resume_from_checkpoint)
 
 # Push to the hub so you can share it with people :D
-model.push_to_hub(script_args.model_name)
-tokenizer.push_to_hub(script_args.model_name)
+model.push_to_hub(script_args.model_name + "_tmp")
+tokenizer.push_to_hub(script_args.model_name + "_tmp")
