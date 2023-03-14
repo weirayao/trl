@@ -23,7 +23,7 @@ class ScriptArguments:
     These arguments vary depending on how many GPUs you have, what their capacity and features are, and what size model you want to train.
     """
 
-    local_rank: Optional[int] = field(default=0, metadata={"help": "Used for multi-gpu"})
+    local_rank: Optional[int] = field(default=-1, metadata={"help": "Used for multi-gpu"})
     resume_from_checkpoint: Optional[bool] = field(
         default=False, metadata={"help": "If you want to resume training where it left off."}
     )
@@ -49,7 +49,13 @@ class ScriptArguments:
         },
     )
     num_train_epochs: Optional[int] = field(
-        default="5", metadata={"help": "The number of training epochs for the reward model. OpenAI used 5."}
+        default=1, metadata={"help": "The number of training epochs for the reward model."}
+    )
+    train_subset: Optional[int] = field(
+        default=100000, metadata={"help": "The size of the subset of the training data to use"}
+    )
+    eval_subset: Optional[int] = field(
+        default=50000, metadata={"help": "The size of the subset of the eval data to use"}
     )
 
 
@@ -59,7 +65,11 @@ script_args = parser.parse_args_into_dataclasses()[0]
 # Load the human stack-exchange-paired dataset for tuning the reward model.
 # TODO: it would be nice to have these as one object, it must be possible?
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/reward", split="train")
+if script_args.train_subset > 0:
+    train_dataset = train_dataset.select(range(script_args.train_subset))
 eval_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/evaluation", split="train")
+if script_args.eval_subset > 0:
+    eval_dataset = eval_dataset.select(range(script_args.eval_subset))
 # Define the training args. Needs to be done before the model is loaded if you are using deepspeed.
 training_args = TrainingArguments(
     output_dir=f"{script_args.model_name}_stack-exchange-paired_reward_model",
