@@ -85,56 +85,42 @@ model = AutoModelForSequenceClassification.from_pretrained(script_args.model_nam
 tokenizer.pad_token = tokenizer.eos_token
 model.config.pad_token_id = tokenizer.eos_token_id
 
+num_proc = 24  # Can adjust to be higher if you have more processors.
+original_columns = train_dataset.column_names
+
 
 # Turn the dataset into pairs of post + summaries, where text_j is the preferred question + answer and text_k is the other.
-def turn_into_text_classification_format(examples):
-    new_examples = {"text_j": [], "text_k": []}
+# Then tokenize the dataset.
+def preprocess_function(examples):
+    new_examples = {
+        "input_ids_j": [],
+        "attention_mask_j": [],
+        "input_ids_k": [],
+        "attention_mask_k": [],
+    }
     for question, response_j, response_k in zip(examples["question"], examples["response_j"], examples["response_k"]):
-        new_examples["text_j"].append("Question: " + question + " \n\nAnswer: " + response_j)
-        new_examples["text_k"].append("Question: " + question + " \n\nAnswer: " + response_k)
+        tokenized_j = tokenizer("Question: " + question + " \n\nAnswer: " + response_j, truncation=True)
+        tokenized_k = tokenizer("Question: " + question + " \n\nAnswer: " + response_k, truncation=True)
+
+        new_examples["input_ids_j"].append(tokenized_j["input_ids"])
+        new_examples["attention_mask_j"].append(tokenized_j["attention_mask"])
+        new_examples["input_ids_k"].append(tokenized_k["input_ids"])
+        new_examples["attention_mask_k"].append(tokenized_k["attention_mask"])
 
     return new_examples
 
 
-num_proc = 24  # Can adjust to be higher if you have more processors. Should work even if you don't have 8 CPUs, though.
-original_columns = train_dataset.column_names
 train_dataset = train_dataset.map(
-    turn_into_text_classification_format,
+    preprocess_function,
     batched=True,
     num_proc=num_proc,
     remove_columns=original_columns,
 )
 eval_dataset = eval_dataset.map(
-    turn_into_text_classification_format,
+    preprocess_function,
     batched=True,
     num_proc=num_proc,
     remove_columns=original_columns,
-)
-
-
-# Tokenize the dataset.
-def preprocess_function(examples):
-    tokenized_j = tokenizer(examples["text_j"], truncation=True)
-    tokenized_k = tokenizer(examples["text_k"], truncation=True)
-    return {
-        "input_ids_j": tokenized_j["input_ids"],
-        "attention_mask_j": tokenized_j["attention_mask"],
-        "input_ids_k": tokenized_k["input_ids"],
-        "attention_mask_k": tokenized_k["attention_mask"],
-    }
-
-
-train_dataset = train_dataset.map(
-    preprocess_function,
-    batched=True,
-    num_proc=num_proc,
-    remove_columns=["text_j", "text_k"],
-)
-eval_dataset = eval_dataset.map(
-    preprocess_function,
-    batched=True,
-    num_proc=num_proc,
-    remove_columns=["text_j", "text_k"],
 )
 
 
