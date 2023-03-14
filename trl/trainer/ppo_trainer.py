@@ -955,7 +955,7 @@ class PPOTrainer(BaseTrainer):
         with open(os.path.join(path, "README.md"), "w", encoding="utf-8") as f:
             f.write(model_card_content)
 
-    def _save_pretrained(self, save_directory: str) -> None:
-        self.accelerator.unwrap_model(self.model).save_pretrained(save_directory)
+    def _save_pretrained(self, save_directory: str, **kwargs) -> None:
+        self.accelerator.unwrap_model(self.model).save_pretrained(save_directory, **kwargs)
         self.tokenizer.save_pretrained(save_directory)
         self.create_model_card(save_directory)
