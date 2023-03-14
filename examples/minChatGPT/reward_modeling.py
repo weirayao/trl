@@ -71,8 +71,8 @@ eval_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/eval
 if script_args.eval_subset > 0:
     eval_dataset = eval_dataset.select(range(script_args.eval_subset))
 # Define the training args. Needs to be done before the model is loaded if you are using deepspeed.
-
-output_name = f"{script_args.model_name}_stack-exchange-paired_rmts_{script_args.train_subset}"
+model_name_split = script_args.model_name.split("/")[-1]
+output_name = f"{model_name_split}_stack-exchange-paired_rmts_{script_args.train_subset}"
 
 training_args = TrainingArguments(
     output_dir=output_name,
