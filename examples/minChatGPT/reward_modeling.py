@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
-
+import torch
 import evaluate
 import numpy as np
 import torch.nn as nn
@@ -34,7 +34,7 @@ class ScriptArguments:
         },
     )
     per_device_train_batch_size: Optional[int] = field(default=16)
-    per_device_eval_batch_size: Optional[int] = field(default=16)
+    per_device_eval_batch_size: Optional[int] = field(default=1)
     gradient_accumulation_steps: Optional[int] = field(default=4)
     learning_rate: Optional[int] = field(default=2e-5)
     weight_decay: Optional[int] = field(default=0.001)
@@ -52,11 +52,9 @@ class ScriptArguments:
         default=1, metadata={"help": "The number of training epochs for the reward model."}
     )
     train_subset: Optional[int] = field(
-        default=100000, metadata={"help": "The size of the subset of the training data to use"}
+        default=1000, metadata={"help": "The size of the subset of the training data to use"}
     )
-    eval_subset: Optional[int] = field(
-        default=50000, metadata={"help": "The size of the subset of the eval data to use"}
-    )
+    eval_subset: Optional[int] = field(default=500, metadata={"help": "The size of the subset of the eval data to use"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -90,7 +88,11 @@ training_args = TrainingArguments(
 
 # Load the value-head model and tokenizer.
 tokenizer = AutoTokenizer.from_pretrained(script_args.model_name)
-model = AutoModelForSequenceClassification.from_pretrained(script_args.model_name, num_labels=1)
+model = AutoModelForSequenceClassification.from_pretrained(
+    script_args.model_name,
+    num_labels=1,
+    torch_dtype=torch.float16 if script_args.bf16 else None,
+)
 
 # Need to do this for gpt2, because it doesn't have an official pad token.
 tokenizer.pad_token = tokenizer.eos_token
@@ -211,5 +213,5 @@ trainer = RewardTrainer(
 trainer.train(script_args.resume_from_checkpoint)
 
 # Push to the hub so you can share it with people :D
-model.push_to_hub(script_args.model_name + "_tmp")
-tokenizer.push_to_hub(script_args.model_name + "_tmp")
+model.push_to_hub(script_args.model_name + "_stack-exchange-paired_reward_model")
+tokenizer.push_to_hub(script_args.model_name + "_stack-exchange-paired_reward_model")
