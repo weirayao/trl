@@ -12,10 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from dataclasses import dataclass, field
+from typing import Optional
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, pipeline
+from transformers import AutoTokenizer, pipeline, HfArgumentParser
 
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
 from trl.core import LengthSampler
@@ -44,11 +46,33 @@ tqdm.pandas()
 # Check the default arguments in the `PPOConfig` class for more details.
 # If you want to log with tensorboard, add the kwarg
 # `accelerator_kwargs={"logging_dir": PATH_TO_LOGS}` to the PPOConfig.
-reward_model_name = "edbeeching/gpt2-xl-stackexchange_stack-exchange-paired_rmts_240000_bup"
+
+
+@dataclass
+class ScriptArguments:
+    """
+    The name of the Casual LM model we wish to fine with PPO
+    """
+
+    # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
+    # models like gpt-neo* models are more suitable.
+    model_name: Optional[str] = field(default="lvwerra/gpt2-xl-stackexchange", metadata={"help": "the model name"})
+    reward_model_name: Optional[str] = field(
+        default="edbeeching/gpt2-xl-stackexchange_stack-exchange-paired_rmts_240000_bup",
+        metadata={"help": "the model name"},
+    )
+    log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
+    learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
+
+
+parser = HfArgumentParser(ScriptArguments)
+script_args = parser.parse_args_into_dataclasses()[0]
+reward_model_name = script_args.reward_model_name
 dataset_name = "lvwerra/stack-exchange-paired"
 config = PPOConfig(
-    model_name="lvwerra/gpt2-xl-stackexchange",
-    learning_rate=1.41e-5,
+    model_name=script_args.model_name,
+    learning_rate=script_args.learning_rate,
+    log_with=script_args.log_with,
     batch_size=16,
     mini_batch_size=1,
 )
