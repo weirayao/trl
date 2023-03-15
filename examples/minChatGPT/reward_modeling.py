@@ -95,6 +95,8 @@ training_args = TrainingArguments(
     remove_unused_columns=False,
     label_names=[],
     bf16=script_args.bf16,
+    logging_strategy="steps",
+    logging_steps=10,
 )
 
 # Load the value-head model and tokenizer.
