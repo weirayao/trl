@@ -33,8 +33,8 @@ class ScriptArguments:
             "help": "Path to deepspeed config if using deepspeed. You may need this if the model that you want to train doesn't fit on a single GPU."
         },
     )
-    per_device_train_batch_size: Optional[int] = field(default=16)
-    per_device_eval_batch_size: Optional[int] = field(default=1)
+    per_device_train_batch_size: Optional[int] = field(default=1)
+    per_device_eval_batch_size: Optional[int] = field(default=2)
     gradient_accumulation_steps: Optional[int] = field(default=4)
     learning_rate: Optional[int] = field(default=2e-5)
     weight_decay: Optional[int] = field(default=0.001)
@@ -56,6 +56,10 @@ class ScriptArguments:
     )
     eval_subset: Optional[int] = field(
         default=50000, metadata={"help": "The size of the subset of the eval data to use"}
+    )
+    gradient_checkpointing: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Enables gradient checkpointing."},
     )
 
 
@@ -81,9 +85,11 @@ training_args = TrainingArguments(
     per_device_eval_batch_size=script_args.per_device_eval_batch_size,
     num_train_epochs=script_args.num_train_epochs,
     weight_decay=script_args.weight_decay,
-    evaluation_strategy="epoch",
+    evaluation_strategy="steps",
+    eval_steps=500,
     save_strategy="epoch",
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
+    gradient_checkpointing=script_args.gradient_checkpointing,
     deepspeed=script_args.deepspeed,
     local_rank=script_args.local_rank,
     remove_unused_columns=False,
@@ -218,5 +224,5 @@ trainer = RewardTrainer(
 trainer.train(script_args.resume_from_checkpoint)
 
 # Push to the hub so you can share it with people :D
-model.push_to_hub(output_name)
-tokenizer.push_to_hub(output_name)
+model.push_to_hub(output_name + "_hub")
+tokenizer.push_to_hub(output_name + "_hub")
