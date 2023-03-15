@@ -76,7 +76,7 @@ if script_args.eval_subset > 0:
     eval_dataset = eval_dataset.select(range(script_args.eval_subset))
 # Define the training args. Needs to be done before the model is loaded if you are using deepspeed.
 model_name_split = script_args.model_name.split("/")[-1]
-output_name = f"{model_name_split}_stack-exchange-paired_rmts_{script_args.train_subset}"
+output_name = f"{model_name_split}_stack-exchange-paired_rmts__{script_args.train_subset}_{script_args.learning_rate}"
 
 training_args = TrainingArguments(
     output_dir=output_name,
