@@ -64,6 +64,11 @@ class ScriptArguments:
     log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
     learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
     output_max_length: Optional[int] = field(default=128, metadata={"help": "the learning rate"})
+    mini_batch_size: Optional[int] = field(default=1, metadata={"help": "the PPO minibatch size"})
+    batch_size: Optional[int] = field(default=256, metadata={"help": "the batch size"})
+    gradient_accumulation_steps: Optional[int] = field(
+        default=16, metadata={"help": "the number of gradient accumulation steps"}
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -74,8 +79,9 @@ config = PPOConfig(
     model_name=script_args.model_name,
     learning_rate=script_args.learning_rate,
     log_with=script_args.log_with,
-    batch_size=16,
-    mini_batch_size=1,
+    batch_size=script_args.batch_size,
+    mini_batch_size=script_args.mini_batch_size,
+    gradient_accumulation_steps=script_args.gradient_accumulation_steps,
 )
 
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl", split="train")
