@@ -61,6 +61,10 @@ class ScriptArguments:
         default=False,
         metadata={"help": "Enables gradient checkpointing."},
     )
+    optim: Optional[str] = field(
+        default="adamw_hf",
+        metadata={"help": "Enables gradient checkpointing."},
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -97,6 +101,7 @@ training_args = TrainingArguments(
     bf16=script_args.bf16,
     logging_strategy="steps",
     logging_steps=10,
+    optim=script_args.optim,
 )
 
 # Load the value-head model and tokenizer.
@@ -142,12 +147,16 @@ train_dataset = train_dataset.map(
     num_proc=num_proc,
     remove_columns=original_columns,
 )
+train_dataset = train_dataset.filter(
+    lambda x: len(x["input_ids_j"]) < 512 and len(x["input_ids_k"]) < 512, batched=False
+)
 eval_dataset = eval_dataset.map(
     preprocess_function,
     batched=True,
     num_proc=num_proc,
     remove_columns=original_columns,
 )
+eval_dataset = eval_dataset.filter(lambda x: len(x["input_ids_j"]) < 512 and len(x["input_ids_k"]) < 512, batched=False)
 
 
 # We need to define a special data collator that batches the data in our j vs k format.
@@ -220,7 +229,7 @@ trainer = RewardTrainer(
     train_dataset=train_dataset,
     eval_dataset=eval_dataset,
     compute_metrics=compute_metrics,
-    data_collator=RewardDataCollatorWithPadding(tokenizer=tokenizer),
+    data_collator=RewardDataCollatorWithPadding(tokenizer=tokenizer, max_length=512),
 )
 
 trainer.train(script_args.resume_from_checkpoint)
