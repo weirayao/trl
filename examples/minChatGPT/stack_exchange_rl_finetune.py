@@ -63,6 +63,7 @@ class ScriptArguments:
     )
     log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
     learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
+    output_max_length: Optional[int] = field(default=128, metadata={"help": "the learning rate"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -183,7 +184,7 @@ generation_kwargs = {
     "pad_token_id": tokenizer.eos_token_id,
 }
 output_min_length = 32
-output_max_length = 128
+output_max_length = script_args.output_max_length
 output_length_sampler = LengthSampler(output_min_length, output_max_length)
 
 for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
