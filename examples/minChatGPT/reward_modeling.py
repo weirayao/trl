@@ -107,9 +107,7 @@ training_args = TrainingArguments(
 # Load the value-head model and tokenizer.
 tokenizer = AutoTokenizer.from_pretrained(script_args.model_name)
 model = AutoModelForSequenceClassification.from_pretrained(
-    script_args.model_name,
-    num_labels=1,
-    torch_dtype=torch.float16 if script_args.bf16 else None,
+    script_args.model_name, num_labels=1, torch_dtype=torch.bfloat16
 )
 
 # Need to do this for gpt2, because it doesn't have an official pad token.
