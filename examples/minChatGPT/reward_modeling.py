@@ -92,7 +92,7 @@ training_args = TrainingArguments(
     evaluation_strategy="steps",
     eval_steps=500,
     save_strategy="steps",
-    save_steps=10,
+    save_steps=500,
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
     gradient_checkpointing=script_args.gradient_checkpointing,
     deepspeed=script_args.deepspeed,
@@ -114,7 +114,7 @@ model = AutoModelForSequenceClassification.from_pretrained(
 # Need to do this for gpt2, because it doesn't have an official pad token.
 tokenizer.pad_token = tokenizer.eos_token
 model.config.pad_token_id = tokenizer.eos_token_id
-
+model.config.use_cache = not script_args.gradient_checkpointing
 num_proc = 24  # Can adjust to be higher if you have more processors.
 original_columns = train_dataset.column_names
 
@@ -147,7 +147,7 @@ train_dataset = train_dataset.map(
     remove_columns=original_columns,
 )
 train_dataset = train_dataset.filter(
-    lambda x: len(x["input_ids_j"]) < 512 and len(x["input_ids_k"]) < 512, batched=False
+    lambda x: len(x["input_ids_j"]) <= 512 and len(x["input_ids_k"]) <= 512, batched=False
 )
 eval_dataset = eval_dataset.map(
     preprocess_function,
@@ -155,7 +155,9 @@ eval_dataset = eval_dataset.map(
     num_proc=num_proc,
     remove_columns=original_columns,
 )
-eval_dataset = eval_dataset.filter(lambda x: len(x["input_ids_j"]) < 512 and len(x["input_ids_k"]) < 512, batched=False)
+eval_dataset = eval_dataset.filter(
+    lambda x: len(x["input_ids_j"]) <= 512 and len(x["input_ids_k"]) <= 512, batched=False
+)
 
 
 # We need to define a special data collator that batches the data in our j vs k format.
