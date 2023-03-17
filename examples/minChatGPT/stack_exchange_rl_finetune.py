@@ -84,6 +84,7 @@ config = PPOConfig(
     batch_size=script_args.batch_size,
     mini_batch_size=script_args.mini_batch_size,
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
+    optimize_cuda_cache=True,
 )
 
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl", split="train")
