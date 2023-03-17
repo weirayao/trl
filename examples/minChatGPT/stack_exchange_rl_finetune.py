@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from accelerate import Accelerator
+
 from dataclasses import dataclass, field
 from typing import Optional
 import torch
@@ -65,9 +67,9 @@ class ScriptArguments:
     learning_rate: Optional[float] = field(default=1.41e-5, metadata={"help": "the learning rate"})
     output_max_length: Optional[int] = field(default=128, metadata={"help": "the learning rate"})
     mini_batch_size: Optional[int] = field(default=1, metadata={"help": "the PPO minibatch size"})
-    batch_size: Optional[int] = field(default=256, metadata={"help": "the batch size"})
+    batch_size: Optional[int] = field(default=32, metadata={"help": "the batch size"})
     gradient_accumulation_steps: Optional[int] = field(
-        default=16, metadata={"help": "the number of gradient accumulation steps"}
+        default=4, metadata={"help": "the number of gradient accumulation steps"}
     )
 
 
@@ -161,7 +163,11 @@ set_seed(config.seed)
 
 # Now let's build the model, the reference model, and the tokenizer.
 model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name)
-ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name, load_in_8bit=True, device_map="auto")
+current_device = Accelerator().process_index
+
+ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(
+    config.model_name, load_in_8bit=True, device_map={"": current_device}
+)
 tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 
 # GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
@@ -177,7 +183,9 @@ ppo_trainer = PPOTrainer(config, model, ref_model, tokenizer, dataset=dataset, d
 device = ppo_trainer.accelerator.device
 if ppo_trainer.accelerator.num_processes == 1:
     device = 0 if torch.cuda.is_available() else "cpu"  # to avoid a ` pipeline` bug
-sentiment_pipe = pipeline("sentiment-analysis", model=reward_model_name, device=device)
+sentiment_pipe = pipeline(
+    "sentiment-analysis", model=reward_model_name, device_map="auto", model_kwargs={"load_in_8bit": True}
+)
 
 # We then define the arguments to pass to the `generate` function. These arguments
 # are passed to the `generate` function of the PPOTrainer, which is a wrapper around
