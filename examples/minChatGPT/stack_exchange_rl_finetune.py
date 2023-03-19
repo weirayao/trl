@@ -19,7 +19,7 @@ from typing import Optional
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-from transformers import AutoTokenizer, pipeline, HfArgumentParser
+from transformers import AutoTokenizer, pipeline, HfArgumentParser, Adafactor
 
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
 from trl.core import LengthSampler
@@ -163,8 +163,11 @@ def collator(data):
 set_seed(config.seed)
 
 # Now let's build the model, the reference model, and the tokenizer.
-model = AutoModelForCausalLMWithValueHead.from_pretrained(config.model_name)
 current_device = Accelerator().process_index
+model = AutoModelForCausalLMWithValueHead.from_pretrained(
+    config.model_name, torch_dtype=torch.bfloat16, device_map={"": current_device}
+)
+
 
 ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(
     config.model_name, load_in_8bit=True, device_map={"": current_device}
@@ -174,9 +177,11 @@ tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 # GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
 # only for this model.
 tokenizer.pad_token = tokenizer.eos_token
-
+optimizer = Adafactor(filter(lambda p: p.requires_grad, model.parameters()), lr=config.learning_rate)
 # We then build the PPOTrainer, passing the model, the reference model, the tokenizer
-ppo_trainer = PPOTrainer(config, model, ref_model, tokenizer, dataset=dataset, data_collator=collator)
+ppo_trainer = PPOTrainer(
+    config, model, ref_model, tokenizer, dataset=dataset, data_collator=collator, optimizer=optimizer
+)
 
 # We then build the sentiment analysis pipeline, passing the model name and the
 # sentiment analysis pipeline arguments. Let's also make sure to set the device
