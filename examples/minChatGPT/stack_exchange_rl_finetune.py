@@ -177,7 +177,13 @@ tokenizer = AutoTokenizer.from_pretrained(config.model_name)
 # GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
 # only for this model.
 tokenizer.pad_token = tokenizer.eos_token
-optimizer = Adafactor(filter(lambda p: p.requires_grad, model.parameters()), lr=config.learning_rate)
+optimizer = Adafactor(
+    filter(lambda p: p.requires_grad, model.parameters()),
+    scale_parameter=False,
+    relative_step=False,
+    warmup_init=False,
+    lr=config.learning_rate,
+)
 # We then build the PPOTrainer, passing the model, the reference model, the tokenizer
 ppo_trainer = PPOTrainer(
     config, model, ref_model, tokenizer, dataset=dataset, data_collator=collator, optimizer=optimizer
