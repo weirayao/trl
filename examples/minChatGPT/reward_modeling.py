@@ -65,6 +65,10 @@ class ScriptArguments:
         default="adamw_hf",
         metadata={"help": "Enables gradient checkpointing."},
     )
+    lr_scheduler_type: Optional[str] = field(
+        default="linear",
+        metadata={"help": "The lr scheduler"},
+    )
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -103,8 +107,8 @@ training_args = TrainingArguments(
     logging_strategy="steps",
     logging_steps=10,
     optim=script_args.optim,
+    lr_scheduler_type=script_args.lr_scheduler_type,
 )
-
 # Load the value-head model and tokenizer.
 tokenizer = AutoTokenizer.from_pretrained(script_args.model_name)
 model = AutoModelForSequenceClassification.from_pretrained(
