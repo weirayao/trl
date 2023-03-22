@@ -204,5 +204,5 @@ plt.hist(rewards_js, bins="auto")
 plt.subplot(1, 2, 2)
 plt.title(f"other response reward dist mean = {sum(rewards_ks)/len(rewards_ks)}")
 plt.hist(rewards_ks, bins="auto")
-
+plt.show()
 print(rewards_ks)

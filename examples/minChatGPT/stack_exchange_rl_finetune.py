@@ -225,9 +225,10 @@ for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
     response_tensors = []
     for question in question_tensors:
         gen_len = output_length_sampler()
+        question_len = question.shape[0]
         generation_kwargs["max_new_tokens"] = gen_len
         response = ppo_trainer.generate(question, **generation_kwargs)
-        response_tensors.append(response.squeeze()[-gen_len:])
+        response_tensors.append(response.squeeze()[question_len:])
     batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
 
     # Compute sentiment score
