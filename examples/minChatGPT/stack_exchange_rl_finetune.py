@@ -72,6 +72,8 @@ class ScriptArguments:
         default=4, metadata={"help": "the number of gradient accumulation steps"}
     )
     adafactor: Optional[bool] = field(default=False, metadata={"help": "whether to use the adafactor optimizer"})
+    early_stopping: Optional[bool] = field(default=False, metadata={"help": "whether to early stop"})
+    target_kl: Optional[float] = field(default=0.1, metadata={"help": "kl target for early stopping"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -86,6 +88,8 @@ config = PPOConfig(
     mini_batch_size=script_args.mini_batch_size,
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
     optimize_cuda_cache=True,
+    early_stopping=script_args.early_stopping,
+    target_kl=script_args.target_kl,
 )
 
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl", split="train")
@@ -207,12 +211,12 @@ sentiment_pipe = pipeline(
 # are passed to the `generate` function of the PPOTrainer, which is a wrapper around
 # the `generate` function of the trained model.
 generation_kwargs = {
-    "min_length": -1,
+    # "min_length": -1,
     "top_k": 0.0,
     "top_p": 1.0,
     "do_sample": True,
     "pad_token_id": tokenizer.eos_token_id,
-    "eos_token_id": -1,
+    # "eos_token_id": -1,
 }
 output_min_length = 32
 output_max_length = script_args.output_max_length
