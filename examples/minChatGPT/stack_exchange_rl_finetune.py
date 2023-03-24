@@ -24,6 +24,10 @@ from transformers import AutoTokenizer, pipeline, HfArgumentParser, Adafactor
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
 from trl.core import LengthSampler
 
+DEFAULT_PAD_TOKEN = "[PAD]"
+DEFAULT_EOS_TOKEN = "</s>"
+DEFAULT_BOS_TOKEN = "</s>"
+DEFAULT_UNK_TOKEN = "</s>"
 
 tqdm.pandas()
 
@@ -59,6 +63,7 @@ class ScriptArguments:
     # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
     # models like gpt-neo* models are more suitable.
     model_name: Optional[str] = field(default="lvwerra/gpt2-xl-stackexchange", metadata={"help": "the model name"})
+    tokenizer_name: Optional[str] = field(default="lvwerra/gpt2-xl-stackexchange", metadata={"help": "the model name"})
     reward_model_name: Optional[str] = field(
         default="edbeeching/gpt2-xl-stackexchange_stack-exchange-paired_rmts_240000_bup",
         metadata={"help": "the model name"},
@@ -78,6 +83,7 @@ class ScriptArguments:
         default=0.0,
         metadata={"help": "a baseline value that is subtracted from the reward"},
     )
+    batched_gen: Optional[bool] = field(default=False, metadata={"help": "whether to use the batched text gen"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -102,12 +108,27 @@ train_dataset = train_dataset.select(range(100000))
 # We set `return_all_scores` to True to get the sentiment score for each token.
 sent_kwargs = {"return_all_scores": True, "function_to_apply": "none", "batch_size": 16}
 
+tokenizer = AutoTokenizer.from_pretrained(script_args.tokenizer_name)
+# GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
+# only for this model.
+
+if "llama" in script_args.tokenizer_name:
+    tokenizer.add_special_tokens(
+        {
+            "eos_token": DEFAULT_EOS_TOKEN,
+            "bos_token": DEFAULT_BOS_TOKEN,
+            "unk_token": DEFAULT_UNK_TOKEN,
+        }
+    )
+else:
+    tokenizer.pad_token = tokenizer.eos_token
+
 
 # Below is an example function to build the dataset. In our case, we use the IMDB dataset
 # from the `datasets` library. One should customize this function to train the model on
 # its own dataset.
 def build_dataset(
-    config, dataset_name="lvwerra/stack-exchange-paired", input_min_text_length=2, input_max_text_length=8
+    tokenizer, dataset_name="lvwerra/stack-exchange-paired", input_min_text_length=2, input_max_text_length=8
 ):
     """
     Build dataset for training. This builds the dataset from `load_dataset`, one should
@@ -122,8 +143,6 @@ def build_dataset(
             The dataloader for the dataset.
     """
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name)
-    tokenizer.pad_token = tokenizer.eos_token
     # load imdb with datasets
     ds = load_dataset(dataset_name, data_dir="data/rl", split="train")
     original_columns = ds.column_names
@@ -155,7 +174,7 @@ def build_dataset(
 
 
 # We retrieve the dataloader by calling the `build_dataset` function.
-dataset = build_dataset(config)
+dataset = build_dataset(tokenizer)
 # import numpy as np
 # import matplotlib.pyplot as plt
 
@@ -177,15 +196,9 @@ model = AutoModelForCausalLMWithValueHead.from_pretrained(
     config.model_name, torch_dtype=torch.bfloat16, device_map={"": current_device}
 )
 
-
 ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(
     config.model_name, load_in_8bit=True, device_map={"": current_device}
 )
-tokenizer = AutoTokenizer.from_pretrained(config.model_name)
-
-# GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
-# only for this model.
-tokenizer.pad_token = tokenizer.eos_token
 
 optimizer = None
 if script_args.adafactor:
@@ -208,7 +221,7 @@ device = ppo_trainer.accelerator.device
 if ppo_trainer.accelerator.num_processes == 1:
     device = 0 if torch.cuda.is_available() else "cpu"  # to avoid a ` pipeline` bug
 sentiment_pipe = pipeline(
-    "sentiment-analysis", model=reward_model_name, device_map="auto", model_kwargs={"load_in_8bit": True}
+    "sentiment-analysis", model=reward_model_name, device_map={"": current_device}, model_kwargs={"load_in_8bit": True}
 )
 
 # We then define the arguments to pass to the `generate` function. These arguments
@@ -229,14 +242,24 @@ output_length_sampler = LengthSampler(output_min_length, output_max_length)
 for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
     question_tensors = batch["input_ids"]
 
-    response_tensors = []
-    for question in question_tensors:
-        gen_len = output_length_sampler()
-        question_len = question.shape[0]
-        generation_kwargs["max_new_tokens"] = gen_len
-        response = ppo_trainer.generate(question, **generation_kwargs)
-        response_tensors.append(response.squeeze()[question_len:])
-    batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
+    if script_args.batched_gen:
+        response_tensors = ppo_trainer.generate(
+            question_tensors,
+            return_prompt=False,
+            length_sampler=output_length_sampler,
+            **generation_kwargs,
+        )
+        batch["response"] = tokenizer.batch_decode(response_tensors)
+    else:
+        response_tensors = []
+        for question in question_tensors:
+            gen_len = output_length_sampler()
+            question_len = question.shape[0]
+            generation_kwargs["max_new_tokens"] = gen_len
+            response = ppo_trainer.generate(question, **generation_kwargs)
+            response_tensors.append(response.squeeze()[question_len:])
+
+        batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
 
     # response_tensors = ppo_trainer.generate([q for q in question_tensors], output_length_sampler, return_prompt=False)
     # batch["response"] = tokenizer.batch_decode(response_tensors)
