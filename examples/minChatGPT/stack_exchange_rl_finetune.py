@@ -118,6 +118,7 @@ if "llama" in script_args.tokenizer_name:
             "eos_token": DEFAULT_EOS_TOKEN,
             "bos_token": DEFAULT_BOS_TOKEN,
             "unk_token": DEFAULT_UNK_TOKEN,
+            "pad_token": DEFAULT_PAD_TOKEN,
         }
     )
 else:
