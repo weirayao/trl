@@ -233,7 +233,7 @@ generation_kwargs = {
     "top_k": 0.0,
     "top_p": 1.0,
     "do_sample": True,
-    "pad_token_id": tokenizer.eos_token_id,
+    "pad_token_id": tokenizer.pad_token_id,
     # "eos_token_id": -1,
 }
 output_min_length = 32
