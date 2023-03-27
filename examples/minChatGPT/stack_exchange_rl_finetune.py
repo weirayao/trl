@@ -87,6 +87,7 @@ class ScriptArguments:
     batched_gen: Optional[bool] = field(default=False, metadata={"help": "whether to use the batched text gen"})
     save_freq: Optional[int] = field(default=-1, metadata={"help": "n steps to save the model"})
     output_dir: Optional[str] = field(default="runs/", metadata={"help": "n steps to save the model"})
+    seed: Optional[int] = field(default=0, metadata={"help": "the seed"})
 
 
 parser = HfArgumentParser(ScriptArguments)
@@ -104,6 +105,7 @@ config = PPOConfig(
     early_stopping=script_args.early_stopping,
     target_kl=script_args.target_kl,
     ppo_epochs=script_args.ppo_epochs,
+    seed=script_args.seed,
 )
 
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl", split="train")
