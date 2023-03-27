@@ -73,6 +73,7 @@ class ScriptArguments:
     output_max_length: Optional[int] = field(default=128, metadata={"help": "the learning rate"})
     mini_batch_size: Optional[int] = field(default=1, metadata={"help": "the PPO minibatch size"})
     batch_size: Optional[int] = field(default=32, metadata={"help": "the batch size"})
+    ppo_epochs: Optional[int] = field(default=4, metadata={"help": "the number of ppo epochs"})
     gradient_accumulation_steps: Optional[int] = field(
         default=4, metadata={"help": "the number of gradient accumulation steps"}
     )
@@ -102,6 +103,7 @@ config = PPOConfig(
     optimize_cuda_cache=True,
     early_stopping=script_args.early_stopping,
     target_kl=script_args.target_kl,
+    ppo_epochs=script_args.ppo_epochs,
 )
 
 train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl", split="train")
