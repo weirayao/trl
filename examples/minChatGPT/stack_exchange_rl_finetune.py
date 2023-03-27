@@ -84,10 +84,12 @@ class ScriptArguments:
         metadata={"help": "a baseline value that is subtracted from the reward"},
     )
     batched_gen: Optional[bool] = field(default=False, metadata={"help": "whether to use the batched text gen"})
+    save_freq: Optional[int] = field(default=-1, metadata={"help": "n steps to save the model"})
+    output_dir: Optional[str] = field(default="runs/", metadata={"help": "n steps to save the model"})
 
 
 parser = HfArgumentParser(ScriptArguments)
-script_args = parser.parse_args_into_dataclasses()[0]
+script_args: ScriptArguments = parser.parse_args_into_dataclasses()[0]
 reward_model_name = script_args.reward_model_name
 dataset_name = "lvwerra/stack-exchange-paired"
 config = PPOConfig(
@@ -106,7 +108,7 @@ train_dataset = load_dataset("lvwerra/stack-exchange-paired", data_dir="data/rl"
 train_dataset = train_dataset.select(range(100000))
 # We then define the arguments to pass to the sentiment analysis pipeline.
 # We set `return_all_scores` to True to get the sentiment score for each token.
-sent_kwargs = {"return_all_scores": True, "function_to_apply": "none", "batch_size": 16, "truncation":True}
+sent_kwargs = {"return_all_scores": True, "function_to_apply": "none", "batch_size": 16, "truncation": True}
 
 tokenizer = AutoTokenizer.from_pretrained(script_args.tokenizer_name)
 # GPT-2 tokenizer has a pad token, but it is not eos_token by default. We need to set it to eos_token.
@@ -273,3 +275,6 @@ for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
     # Run PPO step
     stats = ppo_trainer.step(question_tensors, response_tensors, rewards)
     ppo_trainer.log_stats(stats, batch, rewards)
+
+    if script_args.save_freq and epoch and epoch % script_args.save_freq == 0:
+        ppo_trainer.save_pretrained(script_args.output_dir + f"step_{epoch}")
