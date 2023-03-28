@@ -210,6 +210,7 @@ lora_config = LoraConfig(
 model = AutoModelForCausalLMWithValueHead.from_pretrained(
     config.model_name,
     load_in_8bit=True,
+    device_map={"": current_device},
     peft_config=lora_config,
     layer_norm_names=[],
 )
@@ -225,7 +226,13 @@ if script_args.adafactor:
     )
 # We then build the PPOTrainer, passing the model, the reference model, the tokenizer
 ppo_trainer = PPOTrainer(
-    config, model, ref_model=None, tokenizer=tokenizer, dataset=dataset, data_collator=collator, optimizer=optimizer
+    config,
+    model,
+    ref_model=None,
+    tokenizer=tokenizer,
+    dataset=dataset,
+    data_collator=collator,
+    optimizer=optimizer,
 )
 
 # We then build the sentiment analysis pipeline, passing the model name and the
