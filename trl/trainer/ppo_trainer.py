@@ -628,6 +628,9 @@ class PPOTrainer(BaseTrainer):
                 if self.config.early_stopping:
                     policykl = train_stats["policy/policykl"]
                     early_stop = self._early_stop(policykl)
+                    if early_stop:
+                        self.optimizer.zero_grad()
+                        break
 
                 all_stats.append(train_stats)
 
@@ -994,6 +997,7 @@ class PPOTrainer(BaseTrainer):
                 advantages_mean=masked_mean(advantages, mask).detach(),
                 ratio=ratio.detach(),
             ),
+            returns=dict(mean=return_mean.detach(), var=return_var.detach()),
             returns=dict(mean=return_mean.detach(), var=return_var.detach()),
             val=dict(
                 vpred=masked_mean(vpreds, mask).detach(),
