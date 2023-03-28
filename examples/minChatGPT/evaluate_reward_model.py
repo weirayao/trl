@@ -180,7 +180,7 @@ rewards_js = []
 rewards_ks = []
 
 for epoch, batch in tqdm(enumerate(dataloader)):
-    if epoch >= 100:
+    if epoch >= 2:
         break
     texts_j = batch["text_j"]
     texts_k = batch["text_k"]
