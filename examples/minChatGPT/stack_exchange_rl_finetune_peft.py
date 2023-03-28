@@ -244,7 +244,7 @@ if ppo_trainer.accelerator.num_processes == 1:
 sentiment_pipe = pipeline(
     "sentiment-analysis",
     model=reward_model_name,
-    device_map="auto",
+    device_map={"": current_device},
     model_kwargs={"load_in_8bit": True},
     tokenizer=tokenizer,
 )
