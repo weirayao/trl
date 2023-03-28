@@ -998,7 +998,6 @@ class PPOTrainer(BaseTrainer):
                 ratio=ratio.detach(),
             ),
             returns=dict(mean=return_mean.detach(), var=return_var.detach()),
-            returns=dict(mean=return_mean.detach(), var=return_var.detach()),
             val=dict(
                 vpred=masked_mean(vpreds, mask).detach(),
                 error=masked_mean((vpreds - returns) ** 2, mask).detach(),
