@@ -25,7 +25,10 @@ from transformers import AutoTokenizer, pipeline, HfArgumentParser, Adafactor
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
 from trl.core import LengthSampler
 
-
+DEFAULT_PAD_TOKEN = "[PAD]"
+DEFAULT_EOS_TOKEN = "</s>"
+DEFAULT_BOS_TOKEN = "</s>"
+DEFAULT_UNK_TOKEN = "</s>"
 tqdm.pandas()
 
 ########################################################################
@@ -99,9 +102,21 @@ sent_kwargs = {"return_all_scores": True, "function_to_apply": "none", "batch_si
 # Below is an example function to build the dataset. In our case, we use the IMDB dataset
 # from the `datasets` library. One should customize this function to train the model on
 # its own dataset.
-def build_dataset(
-    config, dataset_name="lvwerra/stack-exchange-paired", input_min_text_length=2, input_max_text_length=8
-):
+tokenizer = AutoTokenizer.from_pretrained(config.model_name)
+if "llama" in script_args.model_name:
+    tokenizer.add_special_tokens(
+        {
+            "eos_token": DEFAULT_EOS_TOKEN,
+            "bos_token": DEFAULT_BOS_TOKEN,
+            "unk_token": DEFAULT_UNK_TOKEN,
+            "pad_token": DEFAULT_PAD_TOKEN,
+        }
+    )
+else:
+    tokenizer.pad_token = tokenizer.eos_token
+
+
+def build_dataset(tokenizer, dataset_name="lvwerra/stack-exchange-paired"):
     """
     Build dataset for training. This builds the dataset from `load_dataset`, one should
     customize this function to train the model on its own dataset.
@@ -115,8 +130,6 @@ def build_dataset(
             The dataloader for the dataset.
     """
 
-    tokenizer = AutoTokenizer.from_pretrained(config.model_name)
-    tokenizer.pad_token = tokenizer.eos_token
     # load imdb with datasets
     ds = load_dataset(dataset_name, data_dir="data/rl", split="train")
     original_columns = ds.column_names
@@ -173,14 +186,18 @@ dataloader = torch.utils.data.DataLoader(
 
 
 sentiment_pipe = pipeline(
-    "sentiment-analysis", model=reward_model_name, device_map="auto", model_kwargs={"load_in_8bit": True}
+    "sentiment-analysis",
+    model=reward_model_name,
+    device_map="auto",
+    model_kwargs={"load_in_8bit": True},
+    tokenizer=tokenizer,
 )
 
 rewards_js = []
 rewards_ks = []
 
 for epoch, batch in tqdm(enumerate(dataloader)):
-    if epoch >= 2:
+    if epoch >= 20:
         break
     texts_j = batch["text_j"]
     texts_k = batch["text_k"]
