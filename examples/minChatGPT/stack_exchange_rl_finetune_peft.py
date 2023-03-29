@@ -274,7 +274,7 @@ for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
             length_sampler=output_length_sampler,
             **generation_kwargs,
         )
-        batch["response"] = tokenizer.batch_decode(response_tensors)
+        batch["response"] = tokenizer.batch_decode(response_tensors, skip_special_tokens=True)
     else:
         response_tensors = []
         for question in question_tensors:
