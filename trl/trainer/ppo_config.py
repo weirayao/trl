@@ -25,7 +25,9 @@ class PPOConfig(object):
     """
     Configuration class for PPOTrainer
     """
-
+    baseline: Optional[bool] = field(default=False, metadata={"help": "use baseline"})
+    reward_pipe: Optional[bool] = field(default=False, metadata={"help": "use reward pipeline"})
+    batch_gen: Optional[bool] = field(default=False, metadata={"help": "use batch generator"})
     model_name: Optional[str] = field(
         default=None,
         metadata={"help": "Name of model to use - used only for tracking purposes"},
@@ -82,7 +84,7 @@ class PPOConfig(object):
         metadata={"help": "Keyword arguments for the tracker (e.g. wandb_project)"},
     )
     tracker_project_name: Optional[str] = field(
-        default="trl", metadata={"help": "Name of project to use for tracking"}
+        default="h4", metadata={"help": "Name of project to use for tracking"}
     )
     max_grad_norm: Optional[float] = field(
         default=None, metadata={"help": "Maximum gradient norm for gradient clipping"}

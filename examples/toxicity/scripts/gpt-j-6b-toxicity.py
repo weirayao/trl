@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -25,6 +26,7 @@ from transformers import (
     HfArgumentParser,
     RobertaForSequenceClassification,
     RobertaTokenizer,
+    pipeline,
 )
 
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, create_reference_model, set_seed
@@ -64,23 +66,36 @@ class ScriptArguments:
 
     # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
     # models like gpt-neo* models are more suitable.
-    model_name: Optional[str] = field(default="ybelkada/gpt-j-6b-sharded-bf16", metadata={"help": "the model name"})
-    log_with: Optional[str] = field(default=None, metadata={"help": "use 'wandb' to log with wandb"})
-    learning_rate: Optional[float] = field(default=(1.47e-5) * 2, metadata={"help": "the learning rate"})
-    mini_batch_size: Optional[int] = field(default=1, metadata={"help": "the PPO minibatch size"})
-    batch_size: Optional[int] = field(default=256, metadata={"help": "the batch size"})
+    # models to try ybelkada/gpt-j-6b-sharded-bf16, HuggingFaceH4/llama-7b-ift-anthropic-alpaca
+    model_name: Optional[str] = field(
+        default="ybelkada/gpt-j-6b-sharded-bf16", metadata={"help": "the model name"}
+    )
+    log_with: Optional[str] = field(default="wandb", metadata={"help": "use 'wandb' to log with wandb"})
+    learning_rate: Optional[float] = field(default=(1.47e-5)*2, metadata={"help": "the learning rate"})
+    mini_batch_size: Optional[int] = field(default=4, metadata={"help": "the PPO minibatch size"})
+    batch_size: Optional[int] = field(default=16, metadata={"help": "the batch size"})  # 256 default
     gradient_accumulation_steps: Optional[int] = field(
         default=1, metadata={"help": "the number of gradient accumulation steps"}
     )
+    baseline: Optional[bool] = field(default=False, metadata={"help": "use baseline"})
+    reward_pipe: Optional[bool] = field(default=False, metadata={"help": "use reward pipeline"})
+    batch_gen: Optional[bool] = field(default=False, metadata={"help": "use batch generator"})
 
+os.environ["WANDB_ENTITY"] = "huggingface"
+os.environ["WANDB_PROJECT"] = "h4"
+os.environ["WANDB_RUN_GROUP"] = "natolambert_tr08_toxicity_debug_3"
 
 parser = HfArgumentParser(ScriptArguments)
 script_args = parser.parse_args_into_dataclasses()[0]
 
 config = PPOConfig(
+    baseline=script_args.baseline,
+    reward_pipe=script_args.reward_pipe,
+    batch_gen=script_args.batch_gen,
     model_name=script_args.model_name,
     learning_rate=script_args.learning_rate,
     log_with=script_args.log_with,
+    ppo_epochs=80,  # 10x default exp length
     mini_batch_size=script_args.mini_batch_size,
     batch_size=script_args.batch_size,
     gradient_accumulation_steps=script_args.gradient_accumulation_steps,
@@ -149,12 +164,20 @@ set_seed(config.seed)
 
 # Now let's build the model, the reference model, and the tokenizer. We first load the model
 # in bfloat16 to save memory using `transformers`.
-model = AutoModelForCausalLM.from_pretrained(config.model_name, torch_dtype=torch.bfloat16)
+model = AutoModelForCausalLM.from_pretrained(
+    config.model_name,
+    # load_in_8bit=True,
+    torch_dtype=torch.bfloat16,
+)
 # And then we pass the loaded model to `AutoModelForCausalLMWithValueHead`.
 model = AutoModelForCausalLMWithValueHead.from_pretrained(model)
 
 # We create a reference model by sharing 20 layers
-ref_model = create_reference_model(model, num_shared_layers=20)
+if config.model_name == "HuggingFaceH4/llama-7b-ift-anthropic-alpaca":
+    pattern = "model.layers.{layer}"
+else:
+    pattern = None
+ref_model = create_reference_model(model, num_shared_layers=20, pattern=pattern)
 
 # We make sure to use `Adam` optimizer on the model parameters that require gradients.
 optimizer = Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=config.learning_rate)
@@ -201,33 +224,81 @@ output_length_sampler = LengthSampler(output_min_length, output_max_length)
 
 model_save_path = "/mnt/disks/younes-disk/models/gpt-j-6B-detoxified-long-context-26-shl-1e4-final"
 
+##### reward model pipe test
+if script_args.reward_pipe:
+    reward_pipeline_kwargs = {
+        "top_k": None,
+        "batch_size": script_args.batch_size,
+        "truncation": True,
+        "padding": True,
+        "max_length": 40,
+        "function_to_apply": "none",  # Compute raw logits
+    }
+    from accelerate import Accelerator
+
+    accelerator = Accelerator()
+    current_device = accelerator.process_index
+    reward_pipe = pipeline(
+        "text-classification",
+        model=toxicity_model_id,
+        model_kwargs={"load_in_8bit": True, "device_map": {"": current_device}, "torch_dtype": torch.float16},
+    )
+    if reward_pipe.tokenizer.pad_token_id is None:
+        reward_pipe.tokenizer.pad_token_id = tokenizer.pad_token_id
+##### END
+
+# BASELINE
+if script_args.baseline:
+    baseline = torch.tensor(2.5)  # defaults to 0
+else:
+    baseline = torch.tensor(0.0)
+
 for epoch, batch in tqdm(enumerate(ppo_trainer.dataloader)):
     query_tensors = batch["input_ids"]
 
-    # Get response from gpt2
-    response_tensors = []
-    for query in query_tensors:
-        gen_len = output_length_sampler()
-        generation_kwargs["max_new_tokens"] = gen_len
-        response = ppo_trainer.generate(query, **generation_kwargs)
-        response_tensors.append(response.squeeze()[-gen_len:])
+    # Get response from the model
+
+    # BATCH GEN
+    if script_args.batch_gen:
+        response_tensors = ppo_trainer.generate(
+            query_tensors,
+            length_sampler=output_length_sampler,
+            # return_prompt=training_args.return_prompt,
+            **generation_kwargs,
+        )
+    # END
+    else:
+        # uncomment for batch generations
+        response_tensors = []
+        for query in query_tensors:
+            gen_len = output_length_sampler()
+            generation_kwargs["max_new_tokens"] = gen_len
+            response = ppo_trainer.generate(query, **generation_kwargs)
+            response_tensors.append(response.squeeze()[-gen_len:])
+
     batch["response"] = [tokenizer.decode(r.squeeze()) for r in response_tensors]
 
     # Compute sentiment score # noqa
     texts = batch["response"]
-    toxicity_inputs = toxicity_tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(
-        ppo_trainer.accelerator.device
-    )
-    logits = toxicity_model(**toxicity_inputs).logits.float()
-    toxicity_labels = (logits[:, 0]).tolist()
 
-    rewards = [torch.tensor(output) for output in toxicity_labels]
+    # REWARD PIPE
+    if script_args.reward_pipe:
+        pipe_outputs = reward_pipe(texts, **reward_pipeline_kwargs)
+        rewards = [torch.tensor(output[0]["score"]) - baseline for output in pipe_outputs]
+    # END
+    else:
+        toxicity_inputs = toxicity_tokenizer(texts, padding=True, truncation=True, return_tensors="pt").to(
+            ppo_trainer.accelerator.device
+        )
+        logits = toxicity_model(**toxicity_inputs).logits.float()
+        toxicity_labels = (logits[:, 0]).tolist()
+        rewards = [torch.tensor(output) for output in toxicity_labels]
 
     # Run PPO step
     stats = ppo_trainer.step(query_tensors, response_tensors, rewards)
     ppo_trainer.log_stats(stats, batch, rewards)
 
     # Save model every 100 epochs
-    if epoch % 100 == 0:
-        if ppo_trainer.accelerator.is_main_process:
-            ppo_trainer.save_pretrained(model_save_path)
+    # if epoch % 100 == 0:
+    #     if ppo_trainer.accelerator.is_main_process:
+    #         ppo_trainer.save_pretrained(model_save_path)
