@@ -258,7 +258,7 @@ generation_kwargs = {
     "top_p": 1.0,
     "do_sample": True,
     "pad_token_id": tokenizer.pad_token_id,
-    "eos_token_id": -1,
+    "eos_token_id": 100_000,
 }
 output_min_length = 32
 output_max_length = script_args.output_max_length
