@@ -20,10 +20,19 @@ import torch
 from datasets import load_dataset
 from tqdm import tqdm
 from transformers import AutoTokenizer, pipeline, HfArgumentParser, Adafactor
+from peft import PeftModel, PeftConfig
 
 from trl import AutoModelForCausalLMWithValueHead, PPOConfig, PPOTrainer, set_seed
 from trl.core import LengthSampler
-
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    AutoConfig,
+    HfArgumentParser,
+    PreTrainedTokenizerBase,
+    Trainer,
+    TrainingArguments,
+)
 
 tqdm.pandas()
 
@@ -203,8 +212,16 @@ model = AutoModelForCausalLMWithValueHead.from_pretrained(
 # We then build the sentiment analysis pipeline, passing the model name and the
 # sentiment analysis pipeline arguments. Let's also make sure to set the device
 # to the same device as the PPOTrainer.
+
+base_model = AutoModelForSequenceClassification.from_pretrained(
+    script_args.model_name, num_labels=1, torch_dtype=torch.bfloat16
+)
+tokenizer = AutoTokenizer.from_pretrained(script_args.model_name)
+inference_model = PeftModel.from_pretrained(base_model, reward_model_name)
+inference_model.eval()
+
 sentiment_pipe = pipeline(
-    "sentiment-analysis", model=reward_model_name, device_map="auto", model_kwargs={"load_in_8bit": True}
+    "sentiment-analysis", model=inference_model, device_map="auto", model_kwargs={"load_in_8bit": True}
 )
 
 # We then define the arguments to pass to the `generate` function. These arguments
