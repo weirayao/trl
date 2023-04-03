@@ -11,6 +11,11 @@ from transformers import (
     AutoConfig,
 )
 
+DEFAULT_PAD_TOKEN = "[PAD]"
+DEFAULT_EOS_TOKEN = "</s>"
+DEFAULT_BOS_TOKEN = "</s>"
+DEFAULT_UNK_TOKEN = "</s>"
+
 
 @dataclass
 class ScriptArguments:
@@ -21,7 +26,7 @@ class ScriptArguments:
     # NOTE: gpt2 models use Conv1D instead of Linear layers which are not yet supported in 8 bit mode
     # models like gpt-neo* models are more suitable
     model_name: Optional[str] = field(
-        default="llama-7b_stack-exchange_peft", metadata={"help": "the model name"}
+        default="llama-se-rl-finetune-128-8-8-1.4e-5step_1200", metadata={"help": "the model name"}
     )
 
 
@@ -40,9 +45,10 @@ if "Llama" in architecture:
     print("Setting EOS, BOS, and UNK tokens for LLama tokenizer")
     tokenizer.add_special_tokens(
         {
-            "eos_token": "</s>",
-            "bos_token": "</s>",
-            "unk_token": "</s>",
+            "eos_token": DEFAULT_EOS_TOKEN,
+            "bos_token": DEFAULT_BOS_TOKEN,
+            "unk_token": DEFAULT_UNK_TOKEN,
+            "pad_token": DEFAULT_PAD_TOKEN,
         }
     )
 
@@ -50,9 +56,7 @@ if "Llama" in architecture:
 model = PeftModel.from_pretrained(model, peft_model_id)
 model.eval()
 
-key_list = [
-    key for key, _ in model.base_model.model.named_modules() if "lora" not in key
-]
+key_list = [key for key, _ in model.base_model.model.named_modules() if "lora" not in key]
 for key in key_list:
     parent, target, target_name = model.base_model._get_submodules(key)
     if isinstance(target, peft.tuners.lora.Linear):
