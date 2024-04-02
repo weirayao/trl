@@ -1,0 +1,2 @@
+class VisualSFTTrainer:
+    pass
